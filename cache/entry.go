@@ -87,15 +87,13 @@ type Entry struct {
 
 	ready  chan util.Void
 	hit    counter
-	key    Hash
 	digest Hash // Body hash, for deduplication
 }
 
-func newEntry(key Hash) *Entry {
-	return &Entry{
-		key:   key,
-		ready: make(chan util.Void),
-	}
+func newEntry() *Entry {
+	e := &Entry{ready: make(chan util.Void)}
+	e.hit.lastCalc = time.Now()
+	return e
 }
 
 // cmp defines ordering of entries in LFU eviction
@@ -109,16 +107,23 @@ func (e *Entry) cmp(ee *Entry) int {
 }
 
 func (e *Entry) Wait(ctx context.Context) error {
+	ready := e.ready // important
+	if ready == nil {
+		return nil
+	}
 	select {
-	case <-e.ready:
+	case <-ready:
 		return nil
 	case <-ctx.Done():
-		return errors.New("timeout while waiting for cache to load")
+		return errors.New("timeout while waiting for data")
 	}
 }
 
 func (e *Entry) AfterInit(admitted bool) {
 	close(e.ready)
+	// gc the hchan to save a little space
+	// TODO: verify this won't cause a test fail
+	e.ready = nil
 	if !admitted {
 		return
 	}

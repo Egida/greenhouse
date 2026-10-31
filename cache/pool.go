@@ -39,15 +39,14 @@ func (l *lookup) insert(e *Entry) {
 	if len(list) > 0 {
 		e.Body = list[0].Body
 	}
-	list = append(list, e)
-	l.table[e.digest] = list
+	l.table[e.digest] = append(list, e)
 }
 
 // (no concurrent safe, lock l.mu before use)
 func (l *lookup) delete(e *Entry) (isLast bool) {
-	list := l.table[e.digest]
-	if list == nil {
-		return false
+	list, ok := l.table[e.digest]
+	if !ok {
+		return true
 	}
 	for i, v := range list {
 		if v == e {
@@ -91,6 +90,10 @@ var pool = store{
 }
 
 func evict() {
+	type item struct {
+		k Hash
+		v *Entry
+	}
 	for range pool.toEvict {
 		// shrink the pool size to a portion of capacity
 		// to prevent constant triggering of eviction
@@ -100,21 +103,23 @@ func evict() {
 		pool.mu.Lock()
 		dupLookup.mu.Lock()
 
-		list := make([]*Entry, 0, len(pool.data))
-		for _, e := range pool.data {
-			list = append(list, e)
+		list := make([]item, 0, len(pool.data))
+		for k, v := range pool.data {
+			list = append(list, item{k: k, v: v})
 		}
-		slices.SortFunc(list, (*Entry).cmp)
-		for _, e := range list {
+		slices.SortFunc(list, func(a, b item) int {
+			return a.v.cmp(b.v)
+		})
+		for _, i := range list {
 			if memUse <= goal {
 				break
 			}
-			if dupLookup.delete(e) {
-				memUse -= uint64(len(e.Body)) + 1024
+			if dupLookup.delete(i.v) {
+				memUse -= uint64(len(i.v.Body)) + 1024
 			} else {
 				memUse -= 1024 // an arbitrary estimation
 			}
-			delete(pool.data, e.key)
+			delete(pool.data, i.k)
 		}
 
 		pool.mu.Unlock()
@@ -128,15 +133,23 @@ const (
 	Wait
 )
 
+func afterFound(e *Entry) int8 {
+	pool.hit.Add(1)
+	e.hit.incr()
+	if e.ready == nil {
+		return Ok
+	} else {
+		return Wait
+	}
+}
+
 func Get(key Hash) (e *Entry, state int8) {
 	pool.mu.RLock()
 	e = pool.data[key]
 	// direct hit
 	if e != nil {
 		pool.mu.RUnlock()
-		e.hit.incr()
-		pool.hit.Add(1)
-		return e, Ok
+		return e, afterFound(e)
 	}
 	pool.mu.RUnlock()
 	// try again
@@ -145,12 +158,10 @@ func Get(key Hash) (e *Entry, state int8) {
 	// inited by someone else
 	if e != nil {
 		pool.mu.Unlock()
-		e.hit.incr()
-		pool.hit.Add(1)
-		return e, Wait
+		return e, afterFound(e)
 	}
 	// first request
-	e = newEntry(key)
+	e = newEntry()
 	pool.data[key] = e
 	pool.mu.Unlock()
 	pool.miss.Add(1)
