@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"runtime/metrics"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -11,42 +10,17 @@ import (
 	"github.com/klinoklaz/greenhouse/util"
 )
 
-var memUseInit uint64
-
-func getMemUse() uint64 {
-	var sample = []metrics.Sample{
-		{Name: "/memory/classes/heap/objects:bytes"},
-	}
-	metrics.Read(sample)
-	return sample[0].Value.Uint64()
-}
-
-func Prepare() {
-	memUseInit = getMemUse()
-	go evict()
-}
-
 type lookup struct {
-	table map[Hash][]*Entry
-	mu    sync.Mutex
-}
-
-func (l *lookup) insert(e *Entry) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	list := l.table[e.digest]
-	// merge duplication
-	if len(list) > 0 {
-		e.Body = list[0].Body
-	}
-	l.table[e.digest] = append(list, e)
+	table   map[Hash][]*Entry
+	mu      sync.Mutex
+	estSize int64 // estimated total size in bytes
 }
 
 // (no concurrent safe, lock l.mu before use)
-func (l *lookup) delete(e *Entry) (isLast bool) {
+func (l *lookup) delete(e *Entry) {
 	list, ok := l.table[e.digest]
 	if !ok {
-		return true
+		return
 	}
 	for i, v := range list {
 		if v == e {
@@ -54,13 +28,13 @@ func (l *lookup) delete(e *Entry) (isLast bool) {
 			break
 		}
 	}
-	isLast = len(list) == 0
-	if isLast {
+	if len(list) == 0 {
+		l.estSize -= 1024 + int64(len(e.Body))
 		delete(l.table, e.digest)
 	} else {
+		l.estSize -= 1024
 		l.table[e.digest] = list
 	}
-	return isLast
 }
 
 // dupLookup is the lookup table
@@ -77,16 +51,28 @@ type store struct {
 	lastEvict time.Time
 }
 
-func (s *store) checkMemUse() {
-	if getMemUse()-memUseInit > config.Cache.Capacity {
-		go func() { s.toEvict <- util.VoidVal }()
-	}
-}
-
 // pool is the main cache pool
 var pool = store{
 	data:    make(map[Hash]*Entry),
 	toEvict: make(chan util.Void),
+}
+
+func deduplicate(e *Entry) {
+	dupLookup.mu.Lock()
+	list := dupLookup.table[e.digest]
+	// merge duplication
+	if len(list) > 0 {
+		dupLookup.estSize += 1024 // http headers etc.
+		e.Body = list[0].Body
+	} else {
+		dupLookup.estSize += 1024 + int64(len(e.Body))
+	}
+	dupLookup.table[e.digest] = append(list, e)
+	dupLookup.mu.Unlock()
+	// trigger eviction
+	if dupLookup.estSize > config.Cache.Capacity {
+		go func() { pool.toEvict <- util.VoidVal }()
+	}
 }
 
 func evict() {
@@ -98,11 +84,11 @@ func evict() {
 		// shrink the pool size to a portion of capacity
 		// to prevent constant triggering of eviction
 		goal := config.Cache.Capacity * 4 / 5
-		memUse := getMemUse() - memUseInit
 
 		pool.mu.Lock()
 		dupLookup.mu.Lock()
 
+		// the easy way: sort + traverse
 		list := make([]item, 0, len(pool.data))
 		for k, v := range pool.data {
 			list = append(list, item{k: k, v: v})
@@ -111,20 +97,20 @@ func evict() {
 			return a.v.cmp(b.v)
 		})
 		for _, i := range list {
-			if memUse <= goal {
+			dupLookup.delete(i.v)
+			delete(pool.data, i.k)
+			if dupLookup.estSize <= goal {
 				break
 			}
-			if dupLookup.delete(i.v) {
-				memUse -= uint64(len(i.v.Body)) + 1024
-			} else {
-				memUse -= 1024 // an arbitrary estimation
-			}
-			delete(pool.data, i.k)
 		}
 
 		pool.mu.Unlock()
 		dupLookup.mu.Unlock()
 	}
+}
+
+func Prepare() {
+	go evict()
 }
 
 const (

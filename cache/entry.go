@@ -131,7 +131,6 @@ func (e *Entry) AfterInit(admitted bool) {
 	// it's not worth deduplicating by saving a copy of *Entry
 	if len(e.Body) > bits.UintSize/8 {
 		e.digest = xxh3.Hash128(e.Body)
-		dupLookup.insert(e)
+		deduplicate(e)
 	}
-	pool.checkMemUse()
 }
