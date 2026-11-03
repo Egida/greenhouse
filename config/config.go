@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/http"
 	"net/url"
 	"time"
 )
@@ -30,6 +31,15 @@ var Server = &server{
 	ReadTimeout:  30 * time.Second,
 	WriteTimeout: 30 * time.Second,
 	FetchTimeout: 30 * time.Second,
+}
+
+type log struct {
+	Location string `json:"location"` // Log file location
+	UseJSON  bool   `json:"use_json"` // Format logs as JSON
+}
+
+var Log = &log{
+	Location: "stderr",
 }
 
 type rules struct {
@@ -70,4 +80,6 @@ func (r *rules) SingleTarget() bool {
 	return r.Target != nil
 }
 
-var Rules = &rules{}
+var Rules = &rules{
+	StatusFilter: []int{http.StatusOK},
+}

@@ -10,12 +10,15 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zeebo/xxh3"
+	"go.uber.org/zap"
 
 	"github.com/klinoklaz/greenhouse/cache"
 	"github.com/klinoklaz/greenhouse/config"
+	"github.com/klinoklaz/greenhouse/util"
 )
 
 func ServeHTTP(exit <-chan os.Signal) {
@@ -27,37 +30,58 @@ func ServeHTTP(exit <-chan os.Signal) {
 		WriteTimeout: config.Server.WriteTimeout,
 	}
 
+	util.Logger().Sugar().
+		Infof("starting http server on %s", server.Addr)
+
 	go func() {
-		<-exit
+		sig := <-exit
+		util.Logger().Info("shutting down http server",
+			zap.String("cause", sig.String()))
 		ctx, cancel := context.WithTimeout(
 			context.Background(), 5*time.Second)
 		defer cancel()
 		server.Shutdown(ctx)
 	}()
 
-	server.ListenAndServe()
+	if err := server.ListenAndServe(); err != nil {
+		util.Logger().Fatal("can not start http server", zap.Error(err))
+	}
 }
 
 func handleHTTP(w http.ResponseWriter, r *http.Request) {
+	var err error
+	defer func() {
+		if err != nil &&
+			!errors.Is(err, syscall.EPIPE) &&
+			!errors.Is(err, syscall.ECONNRESET) {
+			util.Logger().Error("http request",
+				zap.Error(err),
+				zap.String("host", r.Host),
+				zap.String("uri", r.RequestURI),
+				zap.String("client ip", util.GetRealIP(r)))
+		}
+	}()
+
 	if r.Method != "GET" && r.Method != "HEAD" &&
 		r.Method != "OPTION" {
-		handleDirectHTTP(w, r)
+		err = handleDirectHTTP(w, r)
 		return
 	}
 
 	if config.Rules.AllowAuth &&
 		(r.Header.Get("Authorization") != "" ||
 			r.Header.Get("Cookie") != "" || r.URL.User != nil) {
-		handleDirectHTTP(w, r)
+		err = handleDirectHTTP(w, r)
 		return
 	}
 
-	ctx, cancel := context.WithDeadlineCause(r.Context(),
+	ctx, cancel := context.WithDeadlineCause(
+		r.Context(),
 		time.Now().Add(config.Server.FetchTimeout),
 		errors.New("timeout while fetching upstream"))
 	defer cancel()
 
-	handleCachedHTTP(w, r.WithContext(ctx))
+	err = handleCachedHTTP(w, r.WithContext(ctx))
 }
 
 // directHTTP bypasses the caching layer
@@ -104,6 +128,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 	key := keygenHTTP(r)
 	entry, state := cache.Get(key)
 	var err error
+
 	switch state {
 	case cache.Ok: // cache hit
 	case cache.Wait:
@@ -130,6 +155,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 		}
 		return err
 	}
+
 	// serve from cache
 	for h := range entry.Header {
 		w.Header().Set(h, entry.Header.Get(h))
@@ -201,7 +227,8 @@ func (cw *cacheWriterHTTP) Write(data []byte) (int, error) {
 // (implements http.ResponseWriter)
 func (d *cacheWriterHTTP) WriteHeader(statusCode int) {
 	d.w.WriteHeader(statusCode)
-	if !slices.Contains(config.Rules.StatusFilter, statusCode) {
+	if len(config.Rules.StatusFilter) > 0 &&
+		!slices.Contains(config.Rules.StatusFilter, statusCode) {
 		d.filtered = true
 	}
 	d.e.StatusCode = statusCode
