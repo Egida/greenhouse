@@ -73,7 +73,7 @@ func deduplicate(e *Entry) {
 	dupLookup.table[e.digest] = append(list, e)
 	dupLookup.mu.Unlock()
 	// trigger eviction
-	if dupLookup.estSize > config.Cache.Capacity {
+	if dupLookup.estSize > config.Cache().Capacity {
 		go func() { pool.toEvict <- util.VoidVal }()
 	}
 }
@@ -86,7 +86,7 @@ func evict() {
 	for range pool.toEvict {
 		// shrink the pool size to a portion of capacity
 		// to prevent constant triggering of eviction
-		goal := config.Cache.Capacity * 4 / 5
+		goal := config.Cache().Capacity * 4 / 5
 
 		t := time.Now()
 		pool.mu.Lock()

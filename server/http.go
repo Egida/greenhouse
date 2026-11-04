@@ -18,24 +18,25 @@ import (
 
 	"github.com/klinoklaz/greenhouse/cache"
 	"github.com/klinoklaz/greenhouse/config"
+	"github.com/klinoklaz/greenhouse/logger"
 	"github.com/klinoklaz/greenhouse/util"
 )
 
 func ServeHTTP(exit <-chan os.Signal) {
 	server := &http.Server{
-		Addr:         config.Server.ListenAddr,
+		Addr:         config.Server().ListenAddr,
 		Handler:      http.HandlerFunc(handleHTTP),
-		IdleTimeout:  config.Server.IdleTimeout,
-		ReadTimeout:  config.Server.ReadTimeout,
-		WriteTimeout: config.Server.WriteTimeout,
+		IdleTimeout:  config.Server().IdleTimeout,
+		ReadTimeout:  config.Server().ReadTimeout,
+		WriteTimeout: config.Server().WriteTimeout,
 	}
 
-	util.Logger().Sugar().
+	logger.Get().Sugar().
 		Infof("starting http server on %s", server.Addr)
 
 	go func() {
 		sig := <-exit
-		util.Logger().Info("shutting down http server",
+		logger.Get().Info("shutting down http server",
 			zap.String("cause", sig.String()))
 		ctx, cancel := context.WithTimeout(
 			context.Background(), 5*time.Second)
@@ -44,7 +45,7 @@ func ServeHTTP(exit <-chan os.Signal) {
 	}()
 
 	if err := server.ListenAndServe(); err != nil {
-		util.Logger().Fatal("can not start http server", zap.Error(err))
+		logger.Get().Fatal("can not start http server", zap.Error(err))
 	}
 }
 
@@ -54,7 +55,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil &&
 			!errors.Is(err, syscall.EPIPE) &&
 			!errors.Is(err, syscall.ECONNRESET) {
-			util.Logger().Error("http request",
+			logger.Get().Error("http request",
 				zap.Error(err),
 				zap.String("host", r.Host),
 				zap.String("uri", r.RequestURI),
@@ -68,7 +69,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if config.Rules.AllowAuth &&
+	if config.Rules().AllowAuth &&
 		(r.Header.Get("Authorization") != "" ||
 			r.Header.Get("Cookie") != "" || r.URL.User != nil) {
 		err = handleDirectHTTP(w, r)
@@ -77,7 +78,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithDeadlineCause(
 		r.Context(),
-		time.Now().Add(config.Server.FetchTimeout),
+		time.Now().Add(config.Server().FetchTimeout),
 		errors.New("timeout while fetching upstream"))
 	defer cancel()
 
@@ -87,7 +88,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 // directHTTP bypasses the caching layer
 var directHTTP = httputil.ReverseProxy{
 	Director: func(r *http.Request) {
-		target := config.Rules.GetTarget(r.URL.Host)
+		target := config.Rules().GetTarget(r.URL.Host)
 		r.URL.Host = target.Host
 		r.URL.Scheme = target.Scheme
 	},
@@ -102,7 +103,7 @@ var cachedHTTP = httputil.ReverseProxy{
 		if r.Method == "HEAD" {
 			r.Method = "GET"
 		}
-		target := config.Rules.GetTarget(r.URL.Host)
+		target := config.Rules().GetTarget(r.URL.Host)
 		r.URL.Host = target.Host
 		r.URL.Scheme = target.Scheme
 	},
@@ -151,7 +152,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 		entry.AfterInit(!cw.filtered)
 		err = cw.err
 		if err != nil {
-			err = fmt.Errorf("error serving fresh response: %w", err)
+			err = fmt.Errorf("serving fresh response: %w", err)
 		}
 		return err
 	}
@@ -163,7 +164,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 	w.WriteHeader(entry.StatusCode)
 	_, err = w.Write(entry.Body)
 	if err != nil {
-		err = fmt.Errorf("error serving cached response: %w", err)
+		err = fmt.Errorf("serving cached response: %w", err)
 	}
 	return err
 }
@@ -171,7 +172,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 // keygenHTTP generates cache key from HTTP request info
 func keygenHTTP(r *http.Request) cache.Hash {
 	h := xxh3.New128()
-	if config.Rules.CheckMobileUA &&
+	if config.Rules().CheckMobileUA &&
 		strings.Contains(r.Header.Get("User-Agent"), "Mobi") {
 		h.Write([]byte{1})
 	} else {
@@ -179,19 +180,19 @@ func keygenHTTP(r *http.Request) cache.Hash {
 	}
 	// append length to each string to ensure uniqueness
 	order := binary.NativeEndian
-	if !config.Rules.SingleTarget() {
+	if !config.Rules().SingleTarget() {
 		binary.Write(h, order, uint16(len(r.Host)))
 		h.WriteString(r.Host)
 	}
 	binary.Write(h, order, uint16(len(r.RequestURI)))
 	h.WriteString(r.RequestURI)
-	for i, name := range config.Rules.VaryHeaders {
+	for i, name := range config.Rules().VaryHeaders {
 		value := r.Header.Get(name)
 		if value == "" {
 			continue
 		}
 		// NOTE: using index instead of header name makes
-		// config.Rules.VaryHeaders unchangeable after process init
+		// config.Rules().VaryHeaders unchangeable after process init
 		binary.Write(h, order, uint8(i))
 		binary.Write(h, order, uint16(len(value)))
 		h.WriteString(value)
@@ -227,8 +228,8 @@ func (cw *cacheWriterHTTP) Write(data []byte) (int, error) {
 // (implements http.ResponseWriter)
 func (d *cacheWriterHTTP) WriteHeader(statusCode int) {
 	d.w.WriteHeader(statusCode)
-	if len(config.Rules.StatusFilter) > 0 &&
-		!slices.Contains(config.Rules.StatusFilter, statusCode) {
+	if len(config.Rules().StatusFilter) > 0 &&
+		!slices.Contains(config.Rules().StatusFilter, statusCode) {
 		d.filtered = true
 	}
 	d.e.StatusCode = statusCode

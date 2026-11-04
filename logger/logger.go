@@ -1,4 +1,4 @@
-package util
+package logger
 
 import (
 	"sync/atomic"
@@ -9,20 +9,20 @@ import (
 	"github.com/klinoklaz/greenhouse/config"
 )
 
-var logger atomic.Pointer[zap.Logger]
+var l atomic.Pointer[zap.Logger]
 
-func Logger() *zap.Logger {
-	return logger.Load()
+func Get() *zap.Logger {
+	return l.Load()
 }
 
-func InitLogger() {
+func Init() {
 	zc := &zap.Config{
 		Level:             zap.NewAtomicLevelAt(zap.InfoLevel),
 		DisableCaller:     true,
 		DisableStacktrace: true,
-		OutputPaths:       []string{config.Log.Location},
+		OutputPaths:       []string{config.Log().Location},
 	}
-	if config.Log.UseJSON {
+	if config.Log().UseJSON {
 		zc.Encoding = "json"
 		zc.EncoderConfig = zap.NewProductionEncoderConfig()
 	} else {
@@ -31,8 +31,8 @@ func InitLogger() {
 	}
 	zc.EncoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
 	if zl, err := zc.Build(); err == nil {
-		logger.Store(zl)
-	} else if Logger() != nil {
-		Logger().Error("logger initialization failed", zap.Error(err))
+		l.Store(zl)
+	} else if Get() != nil {
+		Get().Error("logger initialization failed", zap.Error(err))
 	}
 }

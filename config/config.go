@@ -3,58 +3,83 @@ package config
 import (
 	"net/http"
 	"net/url"
+	"sync/atomic"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
-type cache struct {
-	Capacity int64 // Max cache size, default 1 GB
+type duration time.Duration
+
+// (implements json.Unmarshaler)
+func (d *duration) UnmarshalJSON(data []byte) error {
+	if len(data) < 3 {
+		return nil
+	}
+	dd, err := time.ParseDuration(string(data[1 : len(data)-1]))
+	if err != nil {
+		return err
+	}
+	*d = duration(dd)
+	return nil
 }
 
-var Cache = &cache{
-	Capacity: 1 << 30,
+// (implements yaml.Unmarshaler)
+func (d *duration) UnmarshalYAML(value *yaml.Node) error {
+	dd, err := time.ParseDuration(value.Value)
+	if err != nil {
+		return err
+	} else {
+		*d = duration(dd)
+		return nil
+	}
+}
+
+type cache struct {
+	Capacity    int64  `json:"-" yaml:"-"` // Max cache size, default 1 GB
+	CapacityStr string `json:"capacity" yaml:"capacity"`
 }
 
 type server struct {
-	ListenAddr string `json:"listen_addr"`
+	ListenAddr string `json:"listen_addr" yaml:"listen_addr"`
 
-	IdleTimeout  time.Duration // Corresponds to http.Server.IdleTimeout
-	ReadTimeout  time.Duration // Corresponds to http.Server.ReadTimeout
-	WriteTimeout time.Duration // Corresponds to http.Server.WriteTimeout
+	// Corresponds to http.Server.IdleTimeout
+	IdleTimeout    time.Duration `json:"-" yaml:"-"`
+	IdleTimeoutStr *duration     `json:"idle_timeout" yaml:"idle_timeout"`
+
+	// Corresponds to http.Server.ReadTimeout
+	ReadTimeout    time.Duration `json:"-" yaml:"-"`
+	ReadTimeoutStr *duration     `json:"read_timeout" yaml:"read_timeout"`
+
+	// Corresponds to http.Server.WriteTimeout
+	WriteTimeout    time.Duration `json:"-" yaml:"-"`
+	WriteTimeoutStr *duration     `json:"write_timeout" yaml:"write_timeout"`
 
 	// Cancel request if upstream doesn't respond within this amount of time
-	FetchTimeout time.Duration
-}
-
-var Server = &server{
-	ListenAddr:   ":3456",
-	IdleTimeout:  30 * time.Second,
-	ReadTimeout:  30 * time.Second,
-	WriteTimeout: 30 * time.Second,
-	FetchTimeout: 30 * time.Second,
+	FetchTimeout    time.Duration `json:"-" yaml:"-"`
+	FetchTimeoutStr *duration     `json:"fetch_timeout" yaml:"fetch_timeout"`
 }
 
 type log struct {
-	Location string `json:"location"` // Log file location
-	UseJSON  bool   `json:"use_json"` // Format logs as JSON
-}
-
-var Log = &log{
-	Location: "stderr",
+	Location string `json:"location" yaml:"location"` // Log file location
+	UseJSON  bool   `json:"use_json" yaml:"use_json"` // Format logs as JSON
 }
 
 type rules struct {
 	// Map of [request host => upstream target]
-	Targets map[string]*url.URL
+	Targets    map[string]*url.URL `json:"-" yaml:"-"`
+	TargetsStr map[string]string   `json:"targets" yaml:"targets"`
 
 	// Set this if you don't need to deal with multiple hosts
-	Target *url.URL
+	Target    *url.URL `json:"-" yaml:"-"`
+	TargetStr string   `json:"target" yaml:"target"`
 
 	// List of HTTP status codes that are cacheable
-	StatusFilter []int `json:"status_filter"`
+	StatusFilter []int `json:"status_filter" yaml:"status_filter"`
 
 	// Response will change along with these request headers.
 	// Adding `Origin` to prevent CORS error is recommended
-	VaryHeaders []string `json:"vary_headers"`
+	VaryHeaders []string `json:"vary_headers" yaml:"vary_headers"`
 
 	// Dictates whether to bypass caching if the request is auth related,
 	// the server detects common auth info such as cookie / auth headers.
@@ -63,10 +88,10 @@ type rules struct {
 	// to prevent user-specific or privileged content being cached.
 	// Note that some auth mechanisms like CSRF token validation may still break
 	// despite this option being turned on, due to the nature of reverse proxy
-	AllowAuth bool `json:"allow_auth"`
+	AllowAuth bool `json:"allow_auth" yaml:"allow_auth"`
 
 	// Whether to detect mobile UA and cache the responses separately
-	CheckMobileUA bool `json:"check_mobile_ua"`
+	CheckMobileUA bool `json:"check_mobile_ua" yaml:"check_mobile_ua"`
 }
 
 func (r *rules) GetTarget(host string) *url.URL {
@@ -80,6 +105,32 @@ func (r *rules) SingleTarget() bool {
 	return r.Target != nil
 }
 
-var Rules = &rules{
-	StatusFilter: []int{http.StatusOK},
+type everything struct {
+	Cache  cache  `json:"cache" yaml:"cache"`
+	Server server `json:"server" yaml:"server"`
+	Log    log    `json:"log" yaml:"log"`
+	Rules  rules  `json:"rules" yaml:"rules"`
+}
+
+var e atomic.Pointer[everything]
+
+func init() {
+	e.Store(&everything{
+		Cache: cache{
+			Capacity: 1 << 30,
+		},
+		Server: server{
+			ListenAddr:   ":3456",
+			IdleTimeout:  30 * time.Second,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			FetchTimeout: 30 * time.Second,
+		},
+		Log: log{
+			Location: "stderr",
+		},
+		Rules: rules{
+			StatusFilter: []int{http.StatusOK},
+		},
+	})
 }
