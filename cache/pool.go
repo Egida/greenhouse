@@ -118,13 +118,14 @@ func evict() {
 	}
 }
 
-func Prepare() {
+// (not idempotent)
+func Init() {
 	go evict()
 }
 
 const (
 	Ok = iota
-	Init
+	Miss
 	Wait
 )
 
@@ -160,7 +161,7 @@ func Get(key Hash) (e *Entry, state int8) {
 	pool.data[key] = e
 	pool.mu.Unlock()
 	pool.miss.Add(1)
-	return e, Init
+	return e, Miss
 }
 
 func Del(key Hash) {

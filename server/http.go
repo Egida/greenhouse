@@ -22,7 +22,7 @@ import (
 	"github.com/klinoklaz/greenhouse/util"
 )
 
-func ServeHTTP(exit <-chan os.Signal) {
+func ListenHTTP(exit <-chan os.Signal) {
 	server := &http.Server{
 		Addr:         config.Server().ListenAddr,
 		Handler:      http.HandlerFunc(handleHTTP),
@@ -44,7 +44,7 @@ func ServeHTTP(exit <-chan os.Signal) {
 		server.Shutdown(ctx)
 	}()
 
-	if err := server.ListenAndServe(); err != nil {
+	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		logger.Get().Fatal("can not start http server", zap.Error(err))
 	}
 }
@@ -136,7 +136,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 		if err = entry.Wait(r.Context()); err != nil {
 			return fmt.Errorf("incomplete cache entry: %w", err)
 		}
-	case cache.Init:
+	case cache.Miss:
 		defer func() {
 			if e := recover(); e != nil {
 				cache.Del(key)

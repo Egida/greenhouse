@@ -114,23 +114,25 @@ type everything struct {
 
 var e atomic.Pointer[everything]
 
+var defaultE = everything{
+	Cache: cache{
+		Capacity: 1 << 30,
+	},
+	Server: server{
+		ListenAddr:   ":3456",
+		IdleTimeout:  30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		FetchTimeout: 30 * time.Second,
+	},
+	Log: log{
+		Location: "stderr",
+	},
+	Rules: rules{
+		StatusFilter: []int{http.StatusOK},
+	},
+}
+
 func init() {
-	e.Store(&everything{
-		Cache: cache{
-			Capacity: 1 << 30,
-		},
-		Server: server{
-			ListenAddr:   ":3456",
-			IdleTimeout:  30 * time.Second,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			FetchTimeout: 30 * time.Second,
-		},
-		Log: log{
-			Location: "stderr",
-		},
-		Rules: rules{
-			StatusFilter: []int{http.StatusOK},
-		},
-	})
+	e.Store(&defaultE)
 }

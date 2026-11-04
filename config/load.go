@@ -30,6 +30,19 @@ func Rules() *rules {
 	return &e.Load().Rules
 }
 
+func LoadSimple(target string) error {
+	tmp := defaultE
+	t, err := url.Parse(target)
+	if err == nil && t.Host != "" && t.Scheme != "" {
+		tmp.Rules.Target = t
+		e.Store(&tmp)
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("invalid target url: %w", err)
+	}
+	return fmt.Errorf("incomplete target url: %s", target)
+}
+
 var savedFilePath string
 
 func LoadFile(file string) error {
@@ -64,16 +77,25 @@ func LoadFile(file string) error {
 			map[string]*url.URL,
 			len(tmp.Rules.TargetsStr))
 		for k, v := range tmp.Rules.TargetsStr {
-			tmp.Rules.Targets[k], err = url.Parse(v)
+			t, err := url.Parse(v)
 			if err != nil {
-				break
+				return fmt.Errorf("invalid target url: %w", err)
 			}
+			if t.Host == "" || t.Scheme == "" {
+				return fmt.Errorf("incomplete target url: %s", v)
+			}
+			tmp.Rules.Targets[k] = t
 		}
 	} else {
-		tmp.Rules.Target, err = url.Parse(tmp.Rules.TargetStr)
-	}
-	if err != nil {
-		return fmt.Errorf("invalid target url: %w", err)
+		t, err := url.Parse(tmp.Rules.TargetStr)
+		if err != nil {
+			return fmt.Errorf("invalid target url: %w", err)
+		}
+		if t.Host == "" || t.Scheme == "" {
+			return fmt.Errorf(
+				"incomplete target url: %s", tmp.Rules.TargetStr)
+		}
+		tmp.Rules.Target = t
 	}
 	// modify VaryHeaders slice without changing index
 	if old := Rules().VaryHeaders; old != nil {
