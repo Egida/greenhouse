@@ -48,7 +48,10 @@ type store struct {
 	mu        sync.RWMutex
 	hit, miss atomic.Uint64
 	toEvict   chan util.Void
-	lastEvict time.Time
+
+	evictionCnt      int
+	lastEvict        time.Time
+	lsatEvictionCost time.Duration
 }
 
 // pool is the main cache pool
@@ -85,6 +88,7 @@ func evict() {
 		// to prevent constant triggering of eviction
 		goal := config.Cache.Capacity * 4 / 5
 
+		t := time.Now()
 		pool.mu.Lock()
 		dupLookup.mu.Lock()
 
@@ -103,6 +107,11 @@ func evict() {
 				break
 			}
 		}
+
+		// statisitics
+		pool.evictionCnt++
+		pool.lastEvict = t
+		pool.lsatEvictionCost = time.Since(t)
 
 		pool.mu.Unlock()
 		dupLookup.mu.Unlock()
