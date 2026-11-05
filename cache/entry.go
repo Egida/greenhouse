@@ -85,13 +85,15 @@ type Entry struct {
 	Header     http.Header
 	StatusCode int
 
-	ready  chan util.Void
+	ready  atomic.Pointer[chan util.Void]
 	hit    counter
 	digest Hash // Body hash, for deduplication
 }
 
 func newEntry() *Entry {
-	e := &Entry{ready: make(chan util.Void)}
+	e := &Entry{}
+	ch := make(chan util.Void)
+	e.ready.Store(&ch)
 	e.hit.lastCalc = time.Now()
 	return e
 }
@@ -107,12 +109,12 @@ func (e *Entry) cmp(ee *Entry) int {
 }
 
 func (e *Entry) Wait(ctx context.Context) error {
-	ready := e.ready // important
+	ready := e.ready.Load() // get a local copy
 	if ready == nil {
 		return nil
 	}
 	select {
-	case <-ready:
+	case <-*ready:
 		return nil
 	case <-ctx.Done():
 		return errors.New("timeout while waiting for data")
@@ -120,10 +122,9 @@ func (e *Entry) Wait(ctx context.Context) error {
 }
 
 func (e *Entry) AfterInit(admitted bool) {
-	close(e.ready)
+	close(*e.ready.Load())
 	// gc the hchan to save a little space
-	// TODO: verify this won't cause a test fail
-	e.ready = nil
+	e.ready.Store(nil)
 	if !admitted {
 		return
 	}

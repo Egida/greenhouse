@@ -132,7 +132,7 @@ const (
 func afterFound(e *Entry) int8 {
 	pool.hit.Add(1)
 	e.hit.incr()
-	if e.ready == nil {
+	if e.ready.Load() == nil {
 		return Ok
 	} else {
 		return Wait
