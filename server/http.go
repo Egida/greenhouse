@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
-	"os"
 	"slices"
 	"strings"
 	"syscall"
@@ -22,8 +21,8 @@ import (
 	"github.com/klinoklaz/greenhouse/util"
 )
 
-func ListenHTTP(exit <-chan os.Signal) {
-	server := &http.Server{
+func ListenHTTP(exit <-chan util.Void) {
+	srv := &http.Server{
 		Addr:         config.Server().ListenAddr,
 		Handler:      http.HandlerFunc(handleHTTP),
 		IdleTimeout:  config.Server().IdleTimeout,
@@ -32,19 +31,17 @@ func ListenHTTP(exit <-chan os.Signal) {
 	}
 
 	logger.Get().Sugar().
-		Infof("starting http server on %s", server.Addr)
+		Infof("starting http server at %s", srv.Addr)
 
 	go func() {
-		sig := <-exit
-		logger.Get().Info("shutting down http server",
-			zap.String("cause", sig.String()))
+		<-exit
 		ctx, cancel := context.WithTimeout(
 			context.Background(), 5*time.Second)
 		defer cancel()
-		server.Shutdown(ctx)
+		srv.Shutdown(ctx)
 	}()
 
-	if err := server.ListenAndServe(); err != http.ErrServerClosed {
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		logger.Get().Fatal("can not start http server", zap.Error(err))
 	}
 }
@@ -71,7 +68,8 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if config.Rules().AllowAuth &&
 		(r.Header.Get("Authorization") != "" ||
-			r.Header.Get("Cookie") != "" || r.URL.User != nil) {
+			r.Header.Get("Cookie") != "" ||
+			r.URL.User != nil) {
 		err = handleDirectHTTP(w, r)
 		return
 	}

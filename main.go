@@ -13,13 +13,15 @@ import (
 	"github.com/klinoklaz/greenhouse/config"
 	"github.com/klinoklaz/greenhouse/logger"
 	"github.com/klinoklaz/greenhouse/server"
+	"github.com/klinoklaz/greenhouse/util"
 )
 
 func main() {
-	var configFile string
-	var target string
+	var configFile, target string
+	var debugPort int
 	flag.StringVar(&configFile, "f", "", "Specify a config file")
 	flag.StringVar(&target, "t", "", "Specify a target url")
+	flag.IntVar(&debugPort, "d", 0, "Expose a debug endpoint for pprof")
 	flag.Parse()
 
 	var err error
@@ -32,13 +34,23 @@ func main() {
 	if err != nil {
 		logger.Get().Fatal("invalid config", zap.Error(err))
 	}
-
 	if info, ok := debug.ReadBuildInfo(); ok {
 		logger.Get().Sugar().Infof(
 			"greenhouse cache proxy %s", info.Main.Version)
 	}
+
+	if debugPort > 0 {
+		go server.Debug(debugPort)
+	}
+
 	cache.Init()
 	shutdown := make(chan os.Signal, 1)
+	exit := make(chan util.Void)
 	signal.Notify(shutdown, syscall.SIGTERM, syscall.SIGINT)
-	server.ListenHTTP(shutdown)
+	go func() {
+		sig := <-shutdown
+		logger.Get().Info("shutting down", zap.String("cause", sig.String()))
+		close(exit) // broadcast exit event
+	}()
+	server.ListenHTTP(exit)
 }
