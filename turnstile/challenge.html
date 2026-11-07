@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8">
+  <title>Checking your browser</title>
+  <style>
+    h1 {
+      font-size: clamp(1.5em, 2vw, 2.5em);
+    }
+    body {
+      font-family: sans-serif;
+      padding: 10vh 12vw;
+      background-color: rgb(255, 251, 245);
+    }
+    @media (prefers-color-scheme: dark) {
+      body {
+        color: white;
+        background-color: rgb(41, 41, 41);
+      }
+    }
+  </style>
+  <script async defer
+    src="https://challenges.cloudflare.com/turnstile/v0/api.js">
+  </script>
+</head>
+<body>
+  <h1>Verify you're human</h1>
+  <div class="cf-turnstile"
+    data-sitekey="__SITE_KEY__"
+    data-theme="dark"
+    data-callback="onSuccess">
+  </div>
+  <script>
+    function onSuccess(token) {
+      document.cookie = `TurnstileToken=${token}; Path=/`
+      location.reload()
+    }
+  </script>
+</body>
+</html>

@@ -30,6 +30,10 @@ func Rules() *rules {
 	return &e.Load().Rules
 }
 
+func Turnstile() *turnstile {
+	return &e.Load().Turnstile
+}
+
 func LoadSimple(target string) error {
 	tmp := defaultE
 	t, err := url.Parse(target)

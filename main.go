@@ -13,6 +13,7 @@ import (
 	"github.com/klinoklaz/greenhouse/config"
 	"github.com/klinoklaz/greenhouse/logger"
 	"github.com/klinoklaz/greenhouse/server"
+	"github.com/klinoklaz/greenhouse/turnstile"
 	"github.com/klinoklaz/greenhouse/util"
 )
 
@@ -43,6 +44,7 @@ func main() {
 		go server.Debug(debugPort)
 	}
 
+	turnstile.Init()
 	cache.Init()
 	shutdown := make(chan os.Signal, 1)
 	exit := make(chan util.Void)

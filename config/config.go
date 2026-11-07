@@ -60,6 +60,16 @@ type server struct {
 	FetchTimeoutStr duration      `json:"fetch_timeout" yaml:"fetch_timeout"`
 }
 
+// turnstile is the cloudflare turnstile config
+type turnstile struct {
+	SiteKey   string `json:"site_key" yaml:"site_key"`
+	SecretKey string `json:"secret_key" yaml:"secret_key"`
+}
+
+func (t *turnstile) Enabled() bool {
+	return t.SiteKey != "" && t.SecretKey != ""
+}
+
 type log struct {
 	// Log level, e.g. debug, info, warn, error, panic, fatal
 	Level string `json:"level" yaml:"level"`
@@ -109,10 +119,11 @@ func (r *rules) SingleTarget() bool {
 }
 
 type everything struct {
-	Cache  cache  `json:"cache" yaml:"cache"`
-	Server server `json:"server" yaml:"server"`
-	Log    log    `json:"log" yaml:"log"`
-	Rules  rules  `json:"rules" yaml:"rules"`
+	Cache     cache     `json:"cache" yaml:"cache"`
+	Server    server    `json:"server" yaml:"server"`
+	Log       log       `json:"log" yaml:"log"`
+	Rules     rules     `json:"rules" yaml:"rules"`
+	Turnstile turnstile `json:"turnstile" yaml:"turnstile"`
 }
 
 var e atomic.Pointer[everything]

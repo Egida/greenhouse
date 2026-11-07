@@ -18,6 +18,7 @@ import (
 	"github.com/klinoklaz/greenhouse/cache"
 	"github.com/klinoklaz/greenhouse/config"
 	"github.com/klinoklaz/greenhouse/logger"
+	"github.com/klinoklaz/greenhouse/turnstile"
 	"github.com/klinoklaz/greenhouse/util"
 )
 
@@ -103,7 +104,10 @@ var cachedHTTP = httputil.ReverseProxy{
 }
 
 func handleDirectHTTP(w http.ResponseWriter, r *http.Request) error {
-	var err error
+	abort, err := turnstile.ChallengeHTTP(w, r)
+	if abort {
+		return err
+	}
 	defer func() {
 		if e := recover(); e != nil {
 			err = fmt.Errorf("direct proxy panicked: %v", e)
@@ -138,9 +142,20 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 			zap.String("host", r.Host),
 			zap.String("uri", r.RequestURI),
 			zap.Any("header", r.Header),
-			zap.Any("key", key),
 			zap.String("client", util.GetRealIP(r)))
 
+		abort, err := turnstile.ChallengeHTTP(w, r)
+		if abort {
+			cache.Del(key)
+			return err
+		}
+		defer func() {
+			if e := recover(); e != nil {
+				cache.Del(key)
+				entry.AfterInit(false)
+				err = fmt.Errorf("cached proxy panicked: %v", e)
+			}
+		}()
 		cw := &cacheWriterHTTP{w: w, e: entry}
 		cachedHTTP.ServeHTTP(cw, r)
 
