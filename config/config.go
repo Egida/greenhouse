@@ -64,6 +64,7 @@ type server struct {
 type turnstile struct {
 	SiteKey   string `json:"site_key" yaml:"site_key"`
 	SecretKey string `json:"secret_key" yaml:"secret_key"`
+	// TODO: add multi-target support
 }
 
 func (t *turnstile) Enabled() bool {

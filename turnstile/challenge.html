@@ -28,12 +28,15 @@
   <h1>Verify you're human</h1>
   <div class="cf-turnstile"
     data-sitekey="__SITE_KEY__"
-    data-theme="dark"
+    data-theme="auto"
     data-callback="onSuccess">
   </div>
   <script>
     function onSuccess(token) {
-      document.cookie = `TurnstileToken=${token}; Path=/`
+      const now = new Date
+      now.setSeconds(now.getSeconds() + 240)
+      const expire = now.toUTCString()
+      document.cookie = `TurnstileToken=${token}; Path=/; Expires=${expire}`
       location.reload()
     }
   </script>
