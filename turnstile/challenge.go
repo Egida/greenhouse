@@ -39,7 +39,7 @@ func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 	tk, err := r.Cookie("TurnstileToken")
 	// show challenge page
 	if err != nil {
-		w.WriteHeader(http.StatusTooManyRequests)
+		w.WriteHeader(http.StatusUnauthorized)
 		_, err = w.Write(*html.Load())
 		return true, err
 	}
@@ -60,7 +60,7 @@ func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 		return false, nil
 	}
 
-	w.WriteHeader(http.StatusTooManyRequests)
+	w.WriteHeader(http.StatusUnauthorized)
 	w.Write(*html.Load())
 	return true, err
 }
