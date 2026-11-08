@@ -93,6 +93,7 @@ var cachedHTTP = httputil.ReverseProxy{
 			r.Method = "GET"
 		}
 		target := config.Rules().GetTarget(r.URL.Host)
+		r.URL.Fragment = ""
 		r.URL.Host = target.Host
 		r.URL.Scheme = target.Scheme
 	},
