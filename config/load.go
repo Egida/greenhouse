@@ -141,6 +141,16 @@ func LoadFile(file string) error {
 		tmp.Rules.StatusFilter = Rules().StatusFilter
 	}
 
+	// check turnstile custom challenge
+	if cp := tmp.Turnstile.ChallengePage; cp != "" {
+		f, err := os.OpenFile(cp, os.O_RDONLY, 0)
+		if err != nil {
+			return fmt.Errorf(
+				"unusable custom challenge page: %w", err)
+		}
+		f.Close()
+	}
+
 	// not having timeouts doesn't make sense
 	if i := tmp.Server.IdleTimeoutStr; i > 0 {
 		tmp.Server.IdleTimeout = time.Duration(i)

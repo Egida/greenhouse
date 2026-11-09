@@ -64,11 +64,16 @@ type server struct {
 type turnstile struct {
 	SiteKey   string `json:"site_key" yaml:"site_key"`
 	SecretKey string `json:"secret_key" yaml:"secret_key"`
+
+	// Path to an html file of custom challenge page,
+	// you need to include the site key into the file by yourself
+	ChallengePage string `json:"challenge_page" yaml:"challenge_page"`
+
 	// TODO: add multi-target support
 }
 
 func (t *turnstile) Enabled() bool {
-	return t.SiteKey != "" && t.SecretKey != ""
+	return (t.SiteKey != "" || t.ChallengePage != "") && t.SecretKey != ""
 }
 
 type log struct {

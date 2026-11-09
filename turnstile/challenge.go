@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"os"
 	"strings"
 	"sync/atomic"
 
@@ -19,10 +20,14 @@ var htmlTpl []byte
 var html atomic.Pointer[[]byte]
 
 func Init() {
-	b := bytes.Replace(htmlTpl,
-		[]byte("__SITE_KEY__"),
-		[]byte(config.Turnstile().SiteKey), 1)
-	html.Store(&b)
+	if t := config.Turnstile(); t.ChallengePage != "" {
+		content, _ := os.ReadFile(t.ChallengePage)
+		html.Store(&content)
+	} else {
+		content := bytes.Replace(htmlTpl,
+			[]byte("__SITE_KEY__"), []byte(t.SiteKey), 1)
+		html.Store(&content)
+	}
 }
 
 func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
