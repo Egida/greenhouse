@@ -140,6 +140,9 @@ func LoadFile(file string) error {
 	if tmp.Rules.StatusFilter == nil {
 		tmp.Rules.StatusFilter = Rules().StatusFilter
 	}
+	if tmp.Turnstile.SessionTTL <= 0 {
+		tmp.Turnstile.SessionTTL = Turnstile().SessionTTL
+	}
 
 	// check turnstile custom challenge
 	if cp := tmp.Turnstile.ChallengePage; cp != "" {

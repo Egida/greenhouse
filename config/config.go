@@ -17,22 +17,19 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	dd, err := time.ParseDuration(string(data[1 : len(data)-1]))
-	if err != nil {
-		return err
+	if err == nil {
+		*d = duration(dd)
 	}
-	*d = duration(dd)
-	return nil
+	return err
 }
 
 // (implements yaml.Unmarshaler)
 func (d *duration) UnmarshalYAML(value *yaml.Node) error {
 	dd, err := time.ParseDuration(value.Value)
-	if err != nil {
-		return err
-	} else {
+	if err == nil {
 		*d = duration(dd)
-		return nil
 	}
+	return err
 }
 
 type cache struct {
@@ -68,6 +65,9 @@ type turnstile struct {
 	// Path to an html file of custom challenge page,
 	// you need to include the site key into the file by yourself
 	ChallengePage string `json:"challenge_page" yaml:"challenge_page"`
+
+	// How many pages can a user visit before next challenge
+	SessionTTL int16 `json:"session_ttl" yaml:"session_ttl"`
 
 	// TODO: add multi-target support
 }
@@ -144,6 +144,9 @@ var defaultE = everything{
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		FetchTimeout: 30 * time.Second,
+	},
+	Turnstile: turnstile{
+		SessionTTL: 30,
 	},
 	Log: log{
 		Level:    "info",
