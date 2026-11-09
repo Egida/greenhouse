@@ -21,13 +21,6 @@ func GetRealIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-func GetRealHost(r *http.Request) string {
-	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-		return h
-	}
-	return r.Host
-}
-
 // ByteSize turns integer size into human readable string, e.g.
 // 1024 -> 1 KB, 1048576 -> 1 MB, etc.
 func ByteSize(bytes int) (float64, string) {

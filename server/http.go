@@ -47,6 +47,8 @@ func ListenHTTP(exit <-chan util.Void) {
 	}
 }
 
+var invalidHost = errors.New("invalid request host")
+
 func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	cantCacheMethod := r.Method != "GET" &&
 		r.Method != "HEAD" &&
@@ -56,8 +58,12 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Header.Get("Cookie") != "" ||
 			r.URL.User != nil)
 
+	t := config.Rules().GetTarget(r.Host)
 	var err error
-	if cantCacheMethod || cantCacheAuth {
+	if t == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		err = invalidHost
+	} else if cantCacheMethod || cantCacheAuth {
 		err = handleDirectHTTP(w, r)
 	} else {
 		err = handleCachedHTTP(w, r)
@@ -68,7 +74,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 		!errors.Is(err, syscall.ECONNRESET) {
 		logger.Get().Error("http request",
 			zap.Error(err),
-			zap.String("host", util.GetRealHost(r)),
+			zap.String("host", r.Host),
 			zap.String("uri", r.RequestURI),
 			zap.String("client", util.GetRealIP(r)))
 	}
@@ -77,7 +83,7 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 // directHTTP bypasses the caching layer
 var directHTTP = httputil.ReverseProxy{
 	Director: func(r *http.Request) {
-		target := config.Rules().GetTarget(util.GetRealHost(r))
+		target := config.Rules().GetTarget(r.Host)
 		r.URL.Host = target.Host
 		r.URL.Scheme = target.Scheme
 	},
@@ -92,7 +98,7 @@ var cachedHTTP = httputil.ReverseProxy{
 		if r.Method == "HEAD" {
 			r.Method = "GET"
 		}
-		target := config.Rules().GetTarget(util.GetRealHost(r))
+		target := config.Rules().GetTarget(r.Host)
 		r.URL.Fragment = ""
 		r.URL.Host = target.Host
 		r.URL.Scheme = target.Scheme
@@ -140,7 +146,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 		}
 	case cache.Miss:
 		logger.Get().Debug("http request cache miss",
-			zap.String("host", util.GetRealHost(r)),
+			zap.String("host", r.Host),
 			zap.String("uri", r.RequestURI),
 			zap.Any("header", r.Header),
 			zap.String("client", util.GetRealIP(r)))
@@ -196,8 +202,8 @@ func keygenHTTP(r *http.Request) cache.Hash {
 	// append length to each string to ensure uniqueness
 	order := binary.NativeEndian
 	if !config.Rules().SingleTarget() {
-		binary.Write(h, order, uint16(len(util.GetRealHost(r))))
-		h.WriteString(util.GetRealHost(r))
+		binary.Write(h, order, uint16(len(r.Host)))
+		h.WriteString(r.Host)
 	}
 	binary.Write(h, order, uint16(len(r.RequestURI)))
 	h.WriteString(r.RequestURI)
