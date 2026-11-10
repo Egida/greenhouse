@@ -26,9 +26,9 @@ func ListenHTTP(exit <-chan util.Void) {
 	srv := &http.Server{
 		Addr:         config.Server().ListenAddr,
 		Handler:      http.HandlerFunc(handleHTTP),
-		IdleTimeout:  config.Server().IdleTimeout,
-		ReadTimeout:  config.Server().ReadTimeout,
-		WriteTimeout: config.Server().WriteTimeout,
+		IdleTimeout:  config.Server().IdleTimeout.Val,
+		ReadTimeout:  config.Server().ReadTimeout.Val,
+		WriteTimeout: config.Server().WriteTimeout.Val,
 	}
 
 	logger.Get().Sugar().
@@ -133,7 +133,7 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 		// time.Now() adds noticeable CPU cost on some platform
 		ctx, cancel := context.WithDeadlineCause(
 			r.Context(),
-			time.Now().Add(config.Server().FetchTimeout),
+			time.Now().Add(config.Server().FetchTimeout.Val),
 			errors.New("timeout while fetching upstream"))
 		defer cancel()
 		r = r.WithContext(ctx)

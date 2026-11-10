@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -140,7 +139,7 @@ func LoadFile(file string) error {
 	if tmp.Rules.StatusFilter == nil {
 		tmp.Rules.StatusFilter = Rules().StatusFilter
 	}
-	if tmp.Turnstile.SessionTTL <= 0 {
+	if !tmp.Turnstile.SessionTTL.Valid() {
 		tmp.Turnstile.SessionTTL = Turnstile().SessionTTL
 	}
 
@@ -155,24 +154,16 @@ func LoadFile(file string) error {
 	}
 
 	// not having timeouts doesn't make sense
-	if i := tmp.Server.IdleTimeoutStr; i > 0 {
-		tmp.Server.IdleTimeout = time.Duration(i)
-	} else {
+	if !tmp.Server.IdleTimeout.Valid() {
 		tmp.Server.IdleTimeout = Server().IdleTimeout
 	}
-	if r := tmp.Server.ReadTimeoutStr; r > 0 {
-		tmp.Server.ReadTimeout = time.Duration(r)
-	} else {
+	if !tmp.Server.ReadTimeout.Valid() {
 		tmp.Server.ReadTimeout = Server().ReadTimeout
 	}
-	if w := tmp.Server.WriteTimeoutStr; w > 0 {
-		tmp.Server.WriteTimeout = time.Duration(w)
-	} else {
+	if !tmp.Server.WriteTimeout.Valid() {
 		tmp.Server.WriteTimeout = Server().WriteTimeout
 	}
-	if f := tmp.Server.FetchTimeoutStr; f > 0 {
-		tmp.Server.FetchTimeout = time.Duration(f)
-	} else {
+	if !tmp.Server.FetchTimeout.Valid() {
 		tmp.Server.FetchTimeout = Server().FetchTimeout
 	}
 

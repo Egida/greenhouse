@@ -31,10 +31,13 @@ var html atomic.Pointer[[]byte]
 var sessoinKey []byte
 
 func Init() {
+	// pros: zero config
+	// cons: all sessions are invalidated after program restart
 	if sessoinKey == nil {
 		sessoinKey = make([]byte, 32)
 		rand.Read(sessoinKey)
 	}
+
 	if t := config.Turnstile(); t.ChallengePage != "" {
 		content, _ := os.ReadFile(t.ChallengePage)
 		html.Store(&content)
@@ -51,49 +54,42 @@ func showChallenge(w http.ResponseWriter) error {
 	return err
 }
 
-func encodeSessionCookie(ttl int16, id uuid.UUID) string {
-	var val [2 + 4 + 16 + 32]byte // ttl + timestamp + uuid + digest
-	binary.Encode(val[:2], binary.BigEndian, ttl)
-	binary.Encode(val[2:6], binary.BigEndian,
-		uint32(time.Now().Unix()))
-	// id = uuid.New()
-	copy(val[6:22], id[:])
+func newSessionCookie() string {
+	var val [8 + 16 + 32]byte // timestamp + uuid + signature
+	binary.Encode(val[:8], binary.BigEndian, time.Now().Unix())
+	id := uuid.New()
+	copy(val[8:24], id[:])
 	mac := hmac.New(sha256.New, sessoinKey)
-	mac.Write(val[:22])
-	mac.Sum(val[:22])
+	mac.Write(val[:24])
+	mac.Sum(val[:24])
 	return base64.StdEncoding.EncodeToString(val[:])
 }
 
-func decodeSessionCookie(val string) (
-	ttl int16, id uuid.UUID, err error) {
+func checkSessionCookie(val string, ttl time.Duration) bool {
 	buf, err := base64.StdEncoding.DecodeString(val)
 	if err != nil {
-		return
+		return false
 	}
-	if len(buf) != 2+4+16+32 {
-		err = errors.New("invalid session cookie")
-		return
+	if len(buf) != 8+16+32 {
+		return false
 	}
-	var ts uint32
-	binary.Decode(buf[2:6], binary.BigEndian, &ts)
-	if time.Since(time.Unix(int64(ts), 0)) > time.Hour {
-		err = errors.New("session cookie expired")
-		return
+	var ts int64
+	binary.Decode(buf[:8], binary.BigEndian, &ts)
+	if time.Since(time.Unix(ts, 0)) > ttl {
+		return false // expired
 	}
 	mac := hmac.New(sha256.New, sessoinKey)
-	mac.Write(buf[:22])
-	if !hmac.Equal(mac.Sum(nil), buf[22:]) {
-		err = errors.New("invalid session signature")
-		return
+	mac.Write(buf[:24])
+	if !hmac.Equal(mac.Sum(nil), buf[24:]) {
+		return false // invalid signature
 	}
-	copy(id[:], buf[6:22])
-	binary.Decode(buf[:2], binary.BigEndian, &ttl)
-	return
+	return true
 }
 
 func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 	abort bool, err error) {
-	if !config.Turnstile().Enabled() {
+	tConfig := config.Turnstile()
+	if !tConfig.Enabled() {
 		return false, nil
 	}
 	defer func() {
@@ -102,20 +98,10 @@ func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 		}
 	}()
 
-	immunity, err := r.Cookie("TurnstileImmunity")
-	if err == nil {
-		ttl, id, err := decodeSessionCookie(immunity.Value)
-		if err != nil || ttl <= 0 {
-			return true, errors.Join(err, showChallenge(w))
-		}
-		// not a sub-resource request
-		if r.Header.Get("Referer") == "" ||
-			r.Header.Get("Sec-Fetch-Dest") == "" ||
-			r.Header.Get("Sec-Fetch-Dest") == "document" {
-			immunity.Path = "/"
-			immunity.Value = encodeSessionCookie(ttl-1, id)
-			w.Header().Add("Set-Cookie", immunity.String())
-		}
+	const sessionName = "TurnstileImmuneSession"
+	immunity, err := r.Cookie(sessionName)
+	if err == nil && checkSessionCookie(
+		immunity.Value, tConfig.SessionTTL.Val) {
 		return false, nil
 	}
 
@@ -131,17 +117,15 @@ func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 	if err != nil || ip.IsPrivate() || ip.IsLoopback() {
 		addr = ""
 	}
-	err = verify(token.Value, addr)
-	if err != nil {
+	if err = verify(token.Value, addr); err != nil {
 		return true, errors.Join(err, showChallenge(w))
 	}
 	// clear token, issue session cookie
 	token.MaxAge = -1
 	session := &http.Cookie{
-		Path: "/",
-		Name: "TurnstileImmunity",
-		Value: encodeSessionCookie(
-			config.Turnstile().SessionTTL, uuid.New()),
+		Path:  "/",
+		Name:  sessionName,
+		Value: newSessionCookie(),
 	}
 	w.Header().Add("Set-Cookie", token.String())
 	w.Header().Add("Set-Cookie", session.String())

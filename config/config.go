@@ -9,7 +9,13 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-type duration time.Duration
+type duration struct {
+	Val time.Duration
+}
+
+func (d *duration) Valid() bool {
+	return d.Val > 0
+}
 
 // (implements json.Unmarshaler)
 func (d *duration) UnmarshalJSON(data []byte) error {
@@ -18,7 +24,7 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 	}
 	dd, err := time.ParseDuration(string(data[1 : len(data)-1]))
 	if err == nil {
-		*d = duration(dd)
+		d.Val = dd
 	}
 	return err
 }
@@ -27,7 +33,7 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 func (d *duration) UnmarshalYAML(value *yaml.Node) error {
 	dd, err := time.ParseDuration(value.Value)
 	if err == nil {
-		*d = duration(dd)
+		d.Val = dd
 	}
 	return err
 }
@@ -41,20 +47,16 @@ type server struct {
 	ListenAddr string `json:"listen_addr" yaml:"listen_addr"`
 
 	// Corresponds to http.Server.IdleTimeout
-	IdleTimeout    time.Duration `json:"-" yaml:"-"`
-	IdleTimeoutStr duration      `json:"idle_timeout" yaml:"idle_timeout"`
+	IdleTimeout duration `json:"idle_timeout" yaml:"idle_timeout"`
 
 	// Corresponds to http.Server.ReadTimeout
-	ReadTimeout    time.Duration `json:"-" yaml:"-"`
-	ReadTimeoutStr duration      `json:"read_timeout" yaml:"read_timeout"`
+	ReadTimeout duration `json:"read_timeout" yaml:"read_timeout"`
 
 	// Corresponds to http.Server.WriteTimeout
-	WriteTimeout    time.Duration `json:"-" yaml:"-"`
-	WriteTimeoutStr duration      `json:"write_timeout" yaml:"write_timeout"`
+	WriteTimeout duration `json:"write_timeout" yaml:"write_timeout"`
 
 	// Cancel request if upstream doesn't respond within this amount of time
-	FetchTimeout    time.Duration `json:"-" yaml:"-"`
-	FetchTimeoutStr duration      `json:"fetch_timeout" yaml:"fetch_timeout"`
+	FetchTimeout duration `json:"fetch_timeout" yaml:"fetch_timeout"`
 }
 
 // turnstile is the cloudflare turnstile config
@@ -66,8 +68,9 @@ type turnstile struct {
 	// you need to include the site key into the file by yourself
 	ChallengePage string `json:"challenge_page" yaml:"challenge_page"`
 
-	// How many pages can a user visit before next challenge
-	SessionTTL int16 `json:"session_ttl" yaml:"session_ttl"`
+	// Users are immune to another challenge in this duration
+	// after completing one
+	SessionTTL duration `json:"session_ttl" yaml:"session_ttl"`
 
 	// TODO: add multi-target support
 }
@@ -140,13 +143,10 @@ var defaultE = everything{
 	},
 	Server: server{
 		ListenAddr:   ":3456",
-		IdleTimeout:  30 * time.Second,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		FetchTimeout: 30 * time.Second,
-	},
-	Turnstile: turnstile{
-		SessionTTL: 30,
+		IdleTimeout:  duration{30 * time.Second},
+		ReadTimeout:  duration{30 * time.Second},
+		WriteTimeout: duration{30 * time.Second},
+		FetchTimeout: duration{30 * time.Second},
 	},
 	Log: log{
 		Level:    "info",
@@ -154,6 +154,9 @@ var defaultE = everything{
 	},
 	Rules: rules{
 		StatusFilter: []int{http.StatusOK},
+	},
+	Turnstile: turnstile{
+		SessionTTL: duration{30 * time.Minute},
 	},
 }
 
