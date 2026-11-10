@@ -31,25 +31,30 @@ func (e *counter) incr() {
 	// if someone else loads the old value simultaneously,
 	// the CAS will inevitably fail
 	flag := e.flag.Load()
-	if time.Since(e.lastCalc) < 1*time.Hour ||
+	if elapsed := time.Since(e.lastCalc); elapsed < 1*time.Hour ||
 		flag < 0 ||
 		!e.flag.CompareAndSwap(flag, (flag+1)|math.MinInt32) {
 		e.cnt.Add(1)
 	} else {
-		e.calcEma(flag == 0)
+		e.calcEma(elapsed, flag == 0)
 		e.flag.And(math.MaxInt32)
 	}
 }
 
 // (not concurrent safe)
-func (e *counter) calcEma(init bool) {
+func (e *counter) calcEma(elapsed time.Duration, init bool) {
 	const α = 2. / (24 + 1)
 	cnt := e.cnt.Load()
 	e.cnt.Add(^(cnt - 1)) // subtract old value
 	if init {
 		e.ema = cnt
 	} else {
-		ema := α*float64(cnt) + (1-α)*float64(e.ema)
+		prevSeq := (1 - α) * float64(e.ema)
+		// take account of empty periods
+		if p := math.Floor(elapsed.Hours()); p > 1 {
+			prevSeq *= math.Pow(1-α, p-1)
+		}
+		ema := α*float64(cnt) + prevSeq
 		e.ema = uint32(math.Ceil(ema))
 	}
 	e.lastCalc = time.Now()
@@ -65,7 +70,7 @@ func (e *counter) estimate() uint32 {
 	}
 	flag := e.flag.Load()
 	if elapsed > time.Hour-10*time.Second {
-		e.calcEma(flag == 0)
+		e.calcEma(elapsed, flag == 0)
 		return e.ema
 	}
 	const α = 2. / (24 + 1)
