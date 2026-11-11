@@ -16,7 +16,7 @@ type lookup struct {
 	estSize int64 // estimated total size in bytes
 }
 
-// (no concurrent safe, lock l.mu before use)
+// (not concurrent safe, lock l.mu before use)
 func (l *lookup) delete(e *Entry) {
 	list, ok := l.table[e.digest]
 	if !ok {

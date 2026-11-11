@@ -53,10 +53,20 @@ func handleHTTP(w http.ResponseWriter, r *http.Request) {
 	cantCacheMethod := r.Method != "GET" &&
 		r.Method != "HEAD" &&
 		r.Method != "OPTION"
-	cantCacheAuth := config.Rules().AllowAuth &&
-		(r.Header.Get("Authorization") != "" ||
-			r.Header.Get("Cookie") != "" ||
-			r.URL.User != nil)
+	var has3rdPartyCookie, cantCacheAuth bool
+	if config.Rules().AllowAuth {
+		// filter out internal cookies
+		for _, c := range r.Cookies() {
+			if c.Name != turnstile.SessionName &&
+				c.Name != turnstile.TokenName {
+				has3rdPartyCookie = true
+				break
+			}
+		}
+		cantCacheAuth = has3rdPartyCookie ||
+			r.Header.Get("Authorization") != "" ||
+			r.URL.User != nil
+	}
 
 	t := config.Rules().GetTarget(r.Host)
 	var err error
@@ -89,6 +99,7 @@ var directHTTP = httputil.ReverseProxy{
 	},
 }
 
+// cachedHTTP forwards cache-miss requests to upstream
 var cachedHTTP = httputil.ReverseProxy{
 	Director: func(r *http.Request) {
 		r.Header.Del("Authorization")

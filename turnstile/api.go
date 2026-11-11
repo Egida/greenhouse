@@ -3,10 +3,8 @@ package turnstile
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -30,8 +28,6 @@ type result struct {
 	ErrorCodes  []string  `json:"error-codes"`
 	ChallengeTs time.Time `json:"challenge_ts"`
 }
-
-var alreadyUsed = errors.New("token already used")
 
 // https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
 func verify(token, ip string) error {
@@ -61,9 +57,6 @@ func verify(token, ip string) error {
 	}
 	if r.Success {
 		return nil
-	}
-	if slices.Contains(r.ErrorCodes, "timeout-or-duplicate") {
-		return alreadyUsed
 	}
 	if len(r.ErrorCodes) > 0 {
 		return fmt.Errorf("verification failed, reason [%s]",

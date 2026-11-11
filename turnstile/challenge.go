@@ -86,6 +86,11 @@ func checkSessionCookie(val string, ttl time.Duration) bool {
 	return true
 }
 
+const (
+	SessionName = "TurnstileImmuneSession"
+	TokenName   = "TurnstileToken"
+)
+
 func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 	abort bool, err error) {
 	tConfig := config.Turnstile()
@@ -98,14 +103,13 @@ func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 		}
 	}()
 
-	const sessionName = "TurnstileImmuneSession"
-	immunity, err := r.Cookie(sessionName)
+	immunity, err := r.Cookie(SessionName)
 	if err == nil && checkSessionCookie(
 		immunity.Value, tConfig.SessionTTL.Val) {
 		return false, nil
 	}
 
-	token, err := r.Cookie("TurnstileToken")
+	token, err := r.Cookie(TokenName)
 	// show challenge page
 	if err != nil {
 		return true, showChallenge(w)
@@ -124,7 +128,7 @@ func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 	token.MaxAge = -1
 	session := &http.Cookie{
 		Path:  "/",
-		Name:  sessionName,
+		Name:  SessionName,
 		Value: newSessionCookie(),
 	}
 	w.Header().Add("Set-Cookie", token.String())
