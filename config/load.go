@@ -37,7 +37,7 @@ func LoadSimple(target string) error {
 	tmp := defaultE
 	t, err := url.Parse(target)
 	if err == nil && t.Host != "" && t.Scheme != "" {
-		tmp.Rules.Target = t
+		tmp.Rules.Target.Val = t
 		e.Store(&tmp)
 		return nil
 	} else if err != nil {
@@ -72,33 +72,19 @@ func LoadFile(file string) error {
 
 	// can't switch between single- & multi-target on the fly,
 	// it will change generated hash key
-	if tmp.Rules.TargetStr == "" && !Rules().SingleTarget() {
-		if len(tmp.Rules.TargetsStr) == 0 {
+	if !tmp.Rules.SingleTarget() && !Rules().SingleTarget() {
+		if len(tmp.Rules.Targets) == 0 {
 			return errors.New("no target url provided")
 		}
-		tmp.Rules.Targets = make(
-			map[string]*url.URL,
-			len(tmp.Rules.TargetsStr))
-		for k, v := range tmp.Rules.TargetsStr {
-			t, err := url.Parse(v)
-			if err != nil {
-				return fmt.Errorf("invalid target url: %w", err)
+		for _, t := range tmp.Rules.Targets {
+			if !t.Valid() {
+				return fmt.Errorf(
+					"incomplete target url: '%s'", t.Val)
 			}
-			if t.Host == "" || t.Scheme == "" {
-				return fmt.Errorf("incomplete target url: %s", v)
-			}
-			tmp.Rules.Targets[k] = t
 		}
-	} else {
-		t, err := url.Parse(tmp.Rules.TargetStr)
-		if err != nil {
-			return fmt.Errorf("invalid target url: %w", err)
-		}
-		if t.Host == "" || t.Scheme == "" {
-			return fmt.Errorf(
-				"incomplete target url: %s", tmp.Rules.TargetStr)
-		}
-		tmp.Rules.Target = t
+	} else if !tmp.Rules.Target.Valid() {
+		return fmt.Errorf(
+			"incomplete target url: '%s'", tmp.Rules.Target.Val)
 	}
 	// modify VaryHeaders slice without changing index
 	if old := Rules().VaryHeaders; old != nil {

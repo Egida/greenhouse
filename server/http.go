@@ -100,6 +100,7 @@ var directHTTP = httputil.ReverseProxy{
 }
 
 // cachedHTTP forwards cache-miss requests to upstream
+// and stores the responses into cache pool
 var cachedHTTP = httputil.ReverseProxy{
 	Director: func(r *http.Request) {
 		r.Header.Del("Authorization")

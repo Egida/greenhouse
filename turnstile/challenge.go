@@ -126,10 +126,14 @@ func ChallengeHTTP(w http.ResponseWriter, r *http.Request) (
 	}
 	// clear token, issue session cookie
 	token.MaxAge = -1
+	token.Path = "/"
+	token.Value = ""
 	session := &http.Cookie{
-		Path:  "/",
-		Name:  SessionName,
-		Value: newSessionCookie(),
+		Path:   "/",
+		Name:   SessionName,
+		Value:  newSessionCookie(),
+		Domain: r.Host,
+		MaxAge: int(tConfig.SessionTTL.Val.Seconds()),
 	}
 	w.Header().Add("Set-Cookie", token.String())
 	w.Header().Add("Set-Cookie", session.String())

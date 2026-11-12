@@ -22,18 +22,52 @@ func (d *duration) UnmarshalJSON(data []byte) error {
 	if len(data) < 3 {
 		return nil
 	}
-	dd, err := time.ParseDuration(string(data[1 : len(data)-1]))
+	data = data[1 : len(data)-1] // unquote
+	pd, err := time.ParseDuration(string(data))
 	if err == nil {
-		d.Val = dd
+		d.Val = pd
 	}
 	return err
 }
 
 // (implements yaml.Unmarshaler)
 func (d *duration) UnmarshalYAML(value *yaml.Node) error {
-	dd, err := time.ParseDuration(value.Value)
+	pd, err := time.ParseDuration(value.Value)
 	if err == nil {
-		d.Val = dd
+		d.Val = pd
+	}
+	return err
+}
+
+type urlurl struct {
+	Val *url.URL
+}
+
+func (u *urlurl) Valid() bool {
+	return u.Val.Host != "" && u.Val.Scheme != ""
+}
+
+// (implements json.Unmarshaler)
+func (u *urlurl) UnmarshalJSON(data []byte) error {
+	if len(data) < 3 {
+		return nil
+	}
+	data = data[1 : len(data)-1]
+	pu, err := url.Parse(string(data))
+	if err == nil {
+		u.Val = pu
+	}
+	return err
+}
+
+// (implements yaml.Unmarshaler)
+func (u *urlurl) UnmarshalYAML(value *yaml.Node) error {
+	if value.Value == "" {
+		return nil
+	}
+	pu, err := url.Parse(value.Value)
+	if err == nil {
+		u.Val = pu
 	}
 	return err
 }
@@ -88,13 +122,13 @@ type log struct {
 }
 
 type rules struct {
-	// Map of [request host => upstream target]
-	Targets    map[string]*url.URL `json:"-" yaml:"-"`
-	TargetsStr map[string]string   `json:"targets" yaml:"targets"`
+	// Map of [request host => upstream target].
+	// This isn't a load balancer, it's only useful
+	// if you have multiple different websites
+	Targets map[string]urlurl `json:"targets" yaml:"targets"`
 
 	// Set this if you don't need to deal with multiple hosts
-	Target    *url.URL `json:"-" yaml:"-"`
-	TargetStr string   `json:"target" yaml:"target"`
+	Target urlurl `json:"target" yaml:"target"`
 
 	// List of HTTP status codes that are cacheable
 	StatusFilter []int `json:"status_filter" yaml:"status_filter"`
@@ -118,13 +152,13 @@ type rules struct {
 
 func (r *rules) GetTarget(host string) *url.URL {
 	if r.SingleTarget() {
-		return r.Target
+		return r.Target.Val
 	}
-	return r.Targets[host]
+	return r.Targets[host].Val
 }
 
 func (r *rules) SingleTarget() bool {
-	return r.Target != nil
+	return r.Target.Val != nil
 }
 
 type everything struct {

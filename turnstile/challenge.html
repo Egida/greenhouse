@@ -32,10 +32,7 @@
   </div>
   <script>
     function onSuccess(token) {
-      const now = new Date
-      now.setSeconds(now.getSeconds() + 240)
-      const expire = now.toUTCString()
-      document.cookie = `TurnstileToken=${token}; Path=/; Expires=${expire}`
+      document.cookie = `TurnstileToken=${token}; Path=/; Max-Age=300`
       location.reload()
     }
   </script>
