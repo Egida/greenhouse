@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"math/bits"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -106,11 +105,32 @@ func newEntry() *Entry {
 // cmp defines ordering of entries in LFU eviction
 // (not concurrent safe)
 func (e *Entry) cmp(ee *Entry) int {
-	est1, est2 := e.hit.estimate(), ee.hit.estimate()
-	if est1 != est2 {
-		return int(est1 - est2)
+	return int(e.hit.estimate() - ee.hit.estimate())
+}
+
+// admitted can be used to determine if Entry
+// is in a consistent state (safe to delete)
+func (e *Entry) admitted() bool {
+	return e.ready.Load() == nil
+}
+
+func (e *Entry) admit() {
+	// gc the runtime hchan to save a little space
+	// and also serves as a state flag
+	e.ready.Store(nil)
+}
+
+// hSize returns estimated header byte size,
+// this is usable only if e.admitted() returns true
+func (e *Entry) hSize() int {
+	size := 0
+	for k, vs := range e.Header {
+		size += len(k)
+		for _, v := range vs {
+			size += len(v)
+		}
 	}
-	return len(ee.Body) - len(e.Body)
+	return size
 }
 
 func (e *Entry) Wait(ctx context.Context) error {
@@ -123,20 +143,5 @@ func (e *Entry) Wait(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return errors.New("request cancelled while waiting for data")
-	}
-}
-
-func (e *Entry) AfterInit(admitted bool) {
-	close(*e.ready.Load())
-	// gc the hchan to save a little space
-	e.ready.Store(nil)
-	if !admitted {
-		return
-	}
-	// if body size is no bigger than pointer size,
-	// it's not worth deduplicating by saving a copy of *Entry
-	if len(e.Body) > bits.UintSize/8 {
-		e.digest = xxh3.Hash128(e.Body)
-		deduplicate(e)
 	}
 }

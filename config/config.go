@@ -73,7 +73,7 @@ func (u *urlurl) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type cache struct {
-	Capacity    int64  `json:"-" yaml:"-"` // Max cache size, default 1 GB
+	Capacity    int    `json:"-" yaml:"-"` // Max cache size, default 1 GB
 	CapacityStr string `json:"capacity" yaml:"capacity"`
 }
 

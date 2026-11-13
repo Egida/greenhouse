@@ -165,23 +165,19 @@ func handleCachedHTTP(w http.ResponseWriter, r *http.Request) error {
 
 		abort, err := turnstile.ChallengeHTTP(w, r)
 		if abort {
-			cache.Del(key)
+			cache.Commit(entry, key, false)
 			return err
 		}
 		defer func() {
 			if e := recover(); e != nil {
-				cache.Del(key)
-				entry.AfterInit(false)
+				cache.Commit(entry, key, false)
 				err = fmt.Errorf("cached proxy panicked: %v", e)
 			}
 		}()
 		cw := &cacheWriterHTTP{w: w, e: entry}
 		cachedHTTP.ServeHTTP(cw, r)
 
-		if cw.filtered {
-			cache.Del(key)
-		}
-		entry.AfterInit(!cw.filtered)
+		cache.Commit(entry, key, !cw.filtered)
 		err = cw.err
 		if err != nil {
 			err = fmt.Errorf("serving fresh response: %w", err)

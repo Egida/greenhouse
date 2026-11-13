@@ -108,7 +108,7 @@ func LoadFile(file string) error {
 
 	// handle optional fields, use default or old value if absent
 	if c := util.ParseByteSize(tmp.Cache.CapacityStr); c > 0 {
-		tmp.Cache.Capacity = int64(c)
+		tmp.Cache.Capacity = c
 	} else {
 		tmp.Cache.Capacity = Cache().Capacity
 	}

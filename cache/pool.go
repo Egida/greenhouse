@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"math/bits"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -8,12 +9,13 @@ import (
 
 	"github.com/klinoklaz/greenhouse/config"
 	"github.com/klinoklaz/greenhouse/util"
+	"github.com/zeebo/xxh3"
 )
 
 type lookup struct {
 	table   map[Hash][]*Entry
 	mu      sync.Mutex
-	estSize int64 // estimated total size in bytes
+	estSize int // estimated total size in bytes
 }
 
 // (not concurrent safe, lock l.mu before use)
@@ -28,12 +30,12 @@ func (l *lookup) delete(e *Entry) {
 			break
 		}
 	}
-	if len(list) == 0 {
-		l.estSize -= 1024 + int64(len(e.Body))
-		delete(l.table, e.digest)
-	} else {
-		l.estSize -= 1024
+	l.estSize -= e.hSize()
+	if len(list) > 0 {
 		l.table[e.digest] = list
+	} else {
+		l.estSize -= len(e.Body)
+		delete(l.table, e.digest)
 	}
 }
 
@@ -51,31 +53,13 @@ type store struct {
 
 	evictionCnt      int
 	lastEvict        time.Time
-	lsatEvictionCost time.Duration
+	lastEvictionCost time.Duration
 }
 
 // pool is the main cache pool
 var pool = store{
 	data:    make(map[Hash]*Entry),
 	toEvict: make(chan util.Void),
-}
-
-func deduplicate(e *Entry) {
-	dupLookup.mu.Lock()
-	list := dupLookup.table[e.digest]
-	// merge duplication
-	if len(list) > 0 {
-		dupLookup.estSize += 1024 // http headers etc.
-		e.Body = list[0].Body
-	} else {
-		dupLookup.estSize += 1024 + int64(len(e.Body))
-	}
-	dupLookup.table[e.digest] = append(list, e)
-	dupLookup.mu.Unlock()
-	// trigger eviction
-	if dupLookup.estSize > config.Cache().Capacity {
-		go func() { pool.toEvict <- util.VoidVal }()
-	}
 }
 
 func evict() {
@@ -95,7 +79,9 @@ func evict() {
 		// the easy way: sort + traverse
 		list := make([]item, 0, len(pool.data))
 		for k, v := range pool.data {
-			list = append(list, item{k: k, v: v})
+			if v.admitted() {
+				list = append(list, item{k: k, v: v})
+			}
 		}
 		slices.SortFunc(list, func(a, b item) int {
 			return a.v.cmp(b.v)
@@ -111,7 +97,7 @@ func evict() {
 		// statisitics
 		pool.evictionCnt++
 		pool.lastEvict = t
-		pool.lsatEvictionCost = time.Since(t)
+		pool.lastEvictionCost = time.Since(t)
 
 		pool.mu.Unlock()
 		dupLookup.mu.Unlock()
@@ -132,7 +118,7 @@ const (
 func afterFound(e *Entry) int8 {
 	pool.hit.Add(1)
 	e.hit.incr()
-	if e.ready.Load() == nil {
+	if e.admitted() {
 		return Ok
 	} else {
 		return Wait
@@ -168,7 +154,7 @@ func Del(key Hash) {
 	pool.mu.RLock()
 	e := pool.data[key]
 	pool.mu.RUnlock()
-	if e == nil {
+	if e == nil || !e.admitted() {
 		return
 	}
 	// delete lookup entry first
@@ -179,4 +165,42 @@ func Del(key Hash) {
 	pool.mu.Lock()
 	delete(pool.data, key)
 	pool.mu.Unlock()
+}
+
+// Commit is called after a cache miss (which results in
+// new Entry being created) to resolve any inconsistent state
+func Commit(e *Entry, key Hash, admit bool) {
+	close(*e.ready.Load())
+
+	if !admit {
+		pool.mu.Lock()
+		delete(pool.data, key)
+		pool.mu.Unlock()
+		return
+	}
+
+	defer e.admit()
+	hSize := e.hSize()
+
+	dupLookup.mu.Lock()
+	defer dupLookup.mu.Unlock()
+	dupLookup.estSize += hSize
+	// if body size is no bigger than pointer size,
+	// it's not worth deduplicating by saving a copy of *Entry
+	if len(e.Body) <= bits.UintSize/8 {
+		return
+	}
+	e.digest = xxh3.Hash128(e.Body)
+	list := dupLookup.table[e.digest]
+	// merge duplication
+	if len(list) > 0 {
+		e.Body = list[0].Body
+	} else {
+		dupLookup.estSize += len(e.Body)
+	}
+	dupLookup.table[e.digest] = append(list, e)
+	// trigger eviction
+	if dupLookup.estSize > config.Cache().Capacity {
+		go func() { pool.toEvict <- util.VoidVal }()
+	}
 }
