@@ -24,11 +24,16 @@ func (l *lookup) delete(e *Entry) {
 	if !ok {
 		return
 	}
+	ok = false
 	for i, v := range list {
 		if v == e {
 			list = slices.Delete(list, i, i+1)
-			break
+			ok = true
 		}
+	}
+	// idempotentcy
+	if !ok {
+		return
 	}
 	l.estSize -= e.hSize()
 	if len(list) > 0 {
